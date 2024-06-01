@@ -32,6 +32,7 @@
  ****************************************************************************/
 
 #include "SeseOmni.hpp"
+# define M_PI 3.14159265358979323846
 
 SeseOmni::SeseOmni() : ModuleParams(nullptr),
 					   ScheduledWorkItem(MODULE_NAME, px4::wq_configurations::rate_ctrl)
@@ -176,6 +177,27 @@ void SeseOmni::Run()
 			{
 				status.control_power[i] = 100.0f;
 			}
+
+			// Tutaj bedzie jakas magia
+			vehicle_thrust_setpoint_s thrust_setpoint{};
+			thrust_setpoint.timestamp = _time_stamp_last;
+
+			float position_north = _local_pos.x;
+			float position_east = _local_pos.y;
+			float position_down = _local_pos.z;
+			float current_heading = M_PI - _local_pos.heading;
+
+			float sin_heading = sin(current_heading);
+			float cos_heading = cos(current_heading);
+			float rotated_position_north = cos_heading * position_north - sin_heading * position_east;
+			float rotated_position_east = sin_heading * position_north + cos_heading * position_east;
+
+			thrust_setpoint.xyz[0] = pid_calculate(&att_pid, desired_heading, current_heading, rotated_position_north, dt);
+			thrust_setpoint.xyz[1] = pid_calculate(&att_pid, desired_heading, current_heading, rotated_position_east, dt);
+			thrust_setpoint.xyz[2] = position_down;
+
+			_vehicle_thrust_setpoint_pub.publish(thrust_setpoint);
+			// END
 
 			_vehicle_torque_setpoint_pub.publish(torque_setpoint);
 			_actuator_controls_status_pub.publish(status);
