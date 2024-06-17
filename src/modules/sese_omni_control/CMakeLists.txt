@@ -1,6 +1,6 @@
 ############################################################################
 #
-#   Copyright (c) 2023-2024 PX4 Development Team. All rights reserved.
+#   Copyright (c) 2015-2019 PX4 Development Team. All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -31,17 +31,20 @@
 #
 ############################################################################
 
+add_subdirectory(AttitudeControl)
+
 px4_add_module(
-	MODULE modules__sese_omni_control
-	MAIN sese_omni_control
-	STACK_MAIN 2000
+	MODULE modules__mc_att_control
+	MAIN mc_att_control
+	COMPILE_FLAGS
+		${MAX_CUSTOM_OPT_LEVEL}
 	SRCS
-		SeseOmni.cpp
-		SeseOmni.hpp
+		mc_att_control_main.cpp
+		mc_att_control.hpp
 	DEPENDS
+		AttitudeControl
+		mathlib
 		px4_work_queue
-		modules__control_allocator
-		pid
-	MODULE_CONFIG
-		module.yaml
-)
+	)
+# Adding unit tests: https://docs.px4.io/main/en/test_and_ci/unit_tests.html
+px4_add_unit_gtest(SRC UnitTest.cpp)

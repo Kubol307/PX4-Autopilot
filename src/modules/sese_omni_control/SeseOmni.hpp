@@ -31,94 +31,316 @@
  *
  ****************************************************************************/
 
-#pragma once
+#include "SeseOmni.hpp"
+#include <cassert>
 
-#include <px4_platform_common/px4_config.h>
-#include <px4_platform_common/defines.h>
-#include <px4_platform_common/module.h>
-#include <px4_platform_common/module_params.h>
-#include <uORB/topics/parameter_update.h>
-#include <px4_platform_common/px4_work_queue/ScheduledWorkItem.hpp>
-#include <uORB/Publication.hpp>
-#include <uORB/Subscription.hpp>
-#include <uORB/topics/differential_drive_setpoint.h>
-#include <uORB/topics/manual_control_setpoint.h>
-#include <uORB/topics/vehicle_control_mode.h>
-#include <uORB/topics/vehicle_status.h>
-#include <uORB/topics/actuator_controls_status.h>
-#include <uORB/topics/vehicle_torque_setpoint.h>
-#include <uORB/topics/vehicle_thrust_setpoint.h>
-#include <uORB/topics/vehicle_local_position.h>
-#include <lib/pid/pid.h>
-
-using namespace time_literals;
-
-class SeseOmni : public ModuleBase<SeseOmni>, public ModuleParams, public px4::ScheduledWorkItem
+SeseOmni::SeseOmni() : ModuleParams(nullptr),
+					   ScheduledWorkItem(MODULE_NAME, px4::wq_configurations::rate_ctrl)
 {
-public:
-	SeseOmni();
-	~SeseOmni() override = default;
+	updateParams();
+}
 
-	/** @see ModuleBase */
-	static int task_spawn(int argc, char *argv[]);
+bool SeseOmni::init()
+{
+	ScheduleOnInterval(10_ms); // 100 Hz
+	return true;
+}
 
-	/** @see ModuleBase */
-	static int custom_command(int argc, char *argv[]);
+void SeseOmni::updateParams()
+{
+	ModuleParams::updateParams();
+	pid_init(&_att_pid, PID_MODE_DERIVATIV_CALC, 0.01f);
+	pid_init(&_x_pos_pid, PID_MODE_DERIVATIV_CALC, 0.01f);
+	pid_init(&_y_pos_pid, PID_MODE_DERIVATIV_CALC, 0.01f);
+	pid_set_parameters(&_att_pid,
+					   att_p_gain.get(), // P
+					   att_i_gain.get(), // I
+					   att_d_gain.get(), // D
+					   10.0f, // Integral limit
+					   1.0f); // Output limit
+	pid_set_parameters(&_x_pos_pid,
+					   x_pos_p_gain.get(), // P
+					   x_pos_i_gain.get(), // I
+					   x_pos_d_gain.get(), // D
+					   10.0f, // Integral limit
+					   1.0f); // Output limit
+	pid_set_parameters(&_y_pos_pid,
+					   y_pos_p_gain.get(), // P
+					   y_pos_i_gain.get(), // I
+					   y_pos_d_gain.get(), // D
+					   10.0f, // Integral limit
+					   1.0f); // Output limit
 
-	/** @see ModuleBase */
-	static int print_usage(const char *reason = nullptr);
+	pid_set_parameters(&_x_velocity_pid,
+					   x_velocity_p_gain.get(), // P
+					   x_velocity_i_gain.get(), // I
+					   x_velocity_d_gain.get(), // D
+					   10.0f, // Integral limit
+					   1.0f); // Output limit)
+	pid_set_parameters(&_y_velocity_pid,
+					   y_velocity_p_gain.get(), // P
+					   y_velocity_i_gain.get(), // I
+					   y_velocity_d_gain.get(), // D
+					   10.0f, // Integral limit
+					   1.0f); // Output limit)
+}
 
-	bool init();
+void SeseOmni::Run()
+{
+	if (should_exit())
+	{
+		ScheduleClear();
+		exit_and_cleanup();
+	}
 
-protected:
-	void updateParams() override;
+	hrt_abstime now = hrt_absolute_time();
 
-private:
-	void Run() override;
-	uORB::Subscription _manual_control_setpoint_sub{ORB_ID(manual_control_setpoint)};
-	uORB::Subscription _parameter_update_sub{ORB_ID(parameter_update)};
-	uORB::Subscription _vehicle_control_mode_sub{ORB_ID(vehicle_control_mode)};
-	uORB::Subscription _vehicle_status_sub{ORB_ID(vehicle_status)};
-	uORB::Subscription _local_pos_sub{ORB_ID(vehicle_local_position)};
 
-	uORB::Publication<differential_drive_setpoint_s> _differential_drive_setpoint_pub{ORB_ID(differential_drive_setpoint)};
+	if (_parameter_update_sub.updated())
+	{
+		parameter_update_s parameter_update;
+		_parameter_update_sub.copy(&parameter_update);
+		updateParams();
+	}
 
-	// Add Publications for control allocator
-	uORB::Publication<actuator_controls_status_s> _actuator_controls_status_pub{ORB_ID(actuator_controls_status_0)};
-	uORB::Publication<vehicle_torque_setpoint_s> _vehicle_torque_setpoint_pub{ORB_ID(vehicle_torque_setpoint)}; /**< vehicle torque setpoint publication */
-	uORB::Publication<vehicle_thrust_setpoint_s> _vehicle_thrust_setpoint_pub{ORB_ID(vehicle_thrust_setpoint)}; /**< vehicle thrust setpoint publication */
+	if (_vehicle_control_mode_sub.updated())
+	{
+		vehicle_control_mode_s vehicle_control_mode{};
 
-	bool _manual_driving = false;
-	bool _mission_driving = false;
-	bool _acro_driving = false;
-	bool _position_control = false;
-	vehicle_local_position_s _local_pos{};
-	hrt_abstime _time_stamp_last{0}; /**< time stamp when task was last updated */
+		if (_vehicle_control_mode_sub.copy(&vehicle_control_mode))
+		{
+			_mission_driving = vehicle_control_mode.flag_control_auto_enabled;
+		}
+	}
 
-	// PID attitude controller
-	PID_t _att_pid{};
-	PID_t _x_pos_pid{};
-	PID_t _y_pos_pid{};
+	if (_vehicle_status_sub.updated())
+	{
+		vehicle_status_s vehicle_status{};
 
-	// PIDs for velocity controller
-	PID_t _x_velocity_pid{};
-	PID_t _y_velocity_pid{};
+		if (_vehicle_status_sub.copy(&vehicle_status))
+		{
+			_manual_driving = (vehicle_status.nav_state == vehicle_status_s::NAVIGATION_STATE_MANUAL);
+			_acro_driving = (vehicle_status.nav_state == vehicle_status_s::NAVIGATION_STATE_ACRO);
+			_position_control = (vehicle_status.nav_state == vehicle_status_s::NAVIGATION_STATE_POSCTL);
 
-	float _max_speed{0.1f};
-	float _max_angular_velocity{0.1f};
+		}
+	}
 
-	DEFINE_PARAMETERS(
-		(ParamFloat<px4::params::ATT_P_GAIN>) att_p_gain,
-		(ParamFloat<px4::params::ATT_I_GAIN>) att_i_gain,
-		(ParamFloat<px4::params::ATT_D_GAIN>) att_d_gain,
-		(ParamFloat<px4::params::X_POS_P_GAIN>) x_pos_p_gain,
-		(ParamFloat<px4::params::X_POS_I_GAIN>) x_pos_i_gain,
-		(ParamFloat<px4::params::X_POS_D_GAIN>) x_pos_d_gain,
-		(ParamFloat<px4::params::Y_POS_P_GAIN>) y_pos_p_gain,
-		(ParamFloat<px4::params::Y_POS_I_GAIN>) y_pos_i_gain,
-		(ParamFloat<px4::params::Y_POS_D_GAIN>) y_pos_d_gain,
-		(ParamFloat<px4::params::HEADING_SP>) heading_sp,
-		(ParamFloat<px4::params::X_POS_SP>) x_pos_sp,
-		(ParamFloat<px4::params::Y_POS_SP>) y_pos_sp
-	);
-};
+	if (_manual_driving)
+	{
+		// Manual mode
+		// directly produce setpoints from the manual control setpoint (joystick)
+		if (_manual_control_setpoint_sub.updated())
+		{
+			manual_control_setpoint_s manual_control_setpoint{};
+
+			if (_manual_control_setpoint_sub.copy(&manual_control_setpoint))
+			{
+				// Create msgs
+				vehicle_torque_setpoint_s torque_setpoint{};
+				vehicle_thrust_setpoint_s thrust_setpoint{};
+				actuator_controls_status_s status;
+
+				thrust_setpoint.timestamp = now;
+				thrust_setpoint.xyz[0] = -manual_control_setpoint.throttle * _max_speed;
+				thrust_setpoint.xyz[1] = manual_control_setpoint.yaw * _max_speed;
+				thrust_setpoint.xyz[2] = 0.0f;
+
+				torque_setpoint.timestamp = now;
+				torque_setpoint.xyz[0] = 0.0f;
+				torque_setpoint.xyz[1] = 0.0f;
+				torque_setpoint.xyz[2] = manual_control_setpoint.roll * _max_speed;
+
+				status.timestamp = torque_setpoint.timestamp;
+
+				for (int i = 0; i < 3; i++)
+				{
+					status.control_power[i] = 100.0f;
+				}
+
+				_vehicle_torque_setpoint_pub.publish(torque_setpoint);
+				_vehicle_thrust_setpoint_pub.publish(thrust_setpoint);
+				_actuator_controls_status_pub.publish(status);
+			}
+		}
+	}
+
+	else if (_acro_driving)
+	{
+		if (_manual_control_setpoint_sub.updated())
+		{
+			manual_control_setpoint_s manual_control_setpoint{};
+
+			if (_manual_control_setpoint_sub.copy(&manual_control_setpoint))
+			{
+				vehicle_thrust_setpoint_s thrust_setpoint{};
+
+				thrust_setpoint.timestamp = now;
+				thrust_setpoint.xyz[0] = -manual_control_setpoint.throttle * _max_speed;
+				thrust_setpoint.xyz[1] = manual_control_setpoint.yaw * _max_speed;
+				thrust_setpoint.xyz[2] = heading_sp.get();
+
+				_vehicle_thrust_setpoint_pub.publish(thrust_setpoint);
+			}
+		}
+		if (_local_pos_sub.update(&_local_pos)) {
+			const float dt = math::min((now - _time_stamp_last), 5000_ms) / 1e3f;
+			_time_stamp_last = now;
+
+			updateHeading();
+
+			float desired_heading;
+			if (this->heading_manual_on)
+				desired_heading = this->iterativeHeading;
+			else
+				desired_heading = heading_sp.get();
+
+			float current_heading = _local_pos.heading;
+
+			vehicle_torque_setpoint_s torque_setpoint{};
+			actuator_controls_status_s status;
+
+			torque_setpoint.timestamp = now;
+			torque_setpoint.xyz[0] = 0.0f;
+			torque_setpoint.xyz[1] = 0.0f;
+			torque_setpoint.xyz[2] = pid_calculate(&_att_pid, desired_heading, current_heading, 0.0f, dt);
+
+			status.timestamp = torque_setpoint.timestamp;
+
+			for (int i = 0; i < 3; i++)
+			{
+				status.control_power[i] = 100.0f;
+			}
+
+			_vehicle_torque_setpoint_pub.publish(torque_setpoint);
+			_actuator_controls_status_pub.publish(status);
+		}
+	}
+	else if(_position_control){
+		if (_local_pos_sub.update(&_local_pos)) {
+			const float dt = math::min((now - _time_stamp_last), 5000_ms) / 1e3f;
+			_time_stamp_last = now;
+
+			float heading_setpoint = heading_sp.get();
+			float x_pos_setpoint = x_pos_sp.get();
+			float y_pos_setpoint = y_pos_sp.get();
+
+			float heading = _local_pos.heading;
+			float x_pos_ned = _local_pos.x;
+			float y_pos_ned = _local_pos.y;
+			float velocity_x_ned = _local_pos.vx;
+			float velocity_y_ned = _local_pos.vy;
+			float acceleration_x_ned = _local_pos.ax;
+			float acceleration_y_ned = _local_pos.ay;
+
+			vehicle_torque_setpoint_s torque_setpoint{};
+			vehicle_thrust_setpoint_s thrust_setpoint{};
+			actuator_controls_status_s status;
+
+			torque_setpoint.timestamp = now;
+			torque_setpoint.xyz[0] = 0.0f;
+			torque_setpoint.xyz[1] = 0.0f;
+			torque_setpoint.xyz[2] = pid_calculate(&_att_pid, heading_setpoint, heading, 0.0f, dt);
+
+
+			float velocity_x_setpoint = pid_calculate(&_x_pos_pid, x_pos_setpoint, x_pos_ned, velocity_x_ned, dt);
+			float velocity_y_setpoint = pid_calculate(&_y_pos_pid, y_pos_setpoint, y_pos_ned, velocity_y_ned, dt);
+
+			// Transformation from NED to body frame
+			float sin_heading = sin(heading);
+			float cos_heading = cos(heading);
+			float velocity_x_body_frame = cos_heading * velocity_x_ned - sin_heading * velocity_y_ned;
+			float velocity_y_body_frame = sin_heading * velocity_x_ned + cos_heading * velocity_y_ned;
+			float acceleration_x_body_frame = cos_heading * acceleration_x_ned - sin_heading * acceleration_y_ned;
+			float acceleration_y_body_frame = sin_heading * acceleration_x_ned + cos_heading * acceleration_y_ned;
+
+			thrust_setpoint.timestamp = now;
+			thrust_setpoint.xyz[0] = pid_calculate(&_x_velocity_pid, velocity_x_setpoint, velocity_x_body_frame, acceleration_x_body_frame, dt);
+			thrust_setpoint.xyz[1] = pid_calculate(&_y_velocity_pid, velocity_y_setpoint, velocity_y_body_frame, acceleration_y_body_frame, dt);
+			thrust_setpoint.xyz[2] = 0.0f;
+
+
+			status.timestamp = now;
+			for (int i = 0; i < 3; i++)
+			{
+				status.control_power[i] = 100.0f;
+			}
+
+			_vehicle_torque_setpoint_pub.publish(torque_setpoint);
+			_vehicle_thrust_setpoint_pub.publish(thrust_setpoint);
+			_actuator_controls_status_pub.publish(status);
+		}
+	}
+}
+
+int SeseOmni::task_spawn(int argc, char *argv[])
+{
+	SeseOmni *instance = new SeseOmni();
+
+	if (instance)
+	{
+		_object.store(instance);
+		_task_id = task_id_is_work_queue;
+
+		if (instance->init())
+		{
+			return PX4_OK;
+		}
+	}
+	else
+	{
+		PX4_ERR("alloc failed");
+	}
+
+	delete instance;
+	_object.store(nullptr);
+	_task_id = -1;
+
+	return PX4_ERROR;
+}
+
+int SeseOmni::custom_command(int argc, char *argv[])
+{
+	return print_usage("unknown command");
+}
+
+int SeseOmni::print_usage(const char *reason)
+{
+	if (reason)
+	{
+		PX4_ERR("%s\n", reason);
+	}
+
+	PRINT_MODULE_DESCRIPTION(
+		R"DESCR_STR(
+### Description
+Rover Differential Drive controller.
+)DESCR_STR");
+
+	PRINT_MODULE_USAGE_NAME("sese_omni_control", "controller");
+	PRINT_MODULE_USAGE_COMMAND("start");
+	PRINT_MODULE_USAGE_DEFAULT_COMMANDS();
+	return 0;
+}
+
+extern "C" __EXPORT int sese_omni_control_main(int argc, char *argv[])
+{
+	return SeseOmni::main(argc, argv);
+}
+
+const float& SeseOmni::getIterativeHeading() const
+{
+	return this->iterativeHeading;
+}
+
+void SeseOmni::updateHeading()
+{
+	iterativeHeading += this->headingScale * manual_control_setpoint_s.roll;
+	if (m_IterativeHeading >= 3.14)
+		m_IterativeHeading = -3.14
+	else if (m_IterativeHeading <= 3-.14)
+		m_IterativeHeading = 3.14
+	assert(m_IterativeHeading >= -3.14
+		&& m_IterativeHeading <= 3.14
+		&& "m_IterativeHeading out of range: abs(m_IterativeHeading) > 3.14")
+}
