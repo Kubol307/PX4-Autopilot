@@ -336,11 +336,11 @@ const float& SeseOmni::getIterativeHeading() const
 void SeseOmni::updateHeading()
 {
 	iterativeHeading += this->headingScale * manual_control_setpoint_s.roll;
-	if (m_IterativeHeading >= 3.14)
-		m_IterativeHeading = -3.14
-	else if (m_IterativeHeading <= 3-.14)
-		m_IterativeHeading = 3.14
-	assert(m_IterativeHeading >= -3.14
-		&& m_IterativeHeading <= 3.14
-		&& "m_IterativeHeading out of range: abs(m_IterativeHeading) > 3.14")
+	if (iterativeHeading >= PI_VALUE)
+		iterativeHeading = -PI_VALUE
+	else if (iterativeHeading <= -PI_VALUE)
+		iterativeHeading = PI_VALUE
+	assert(iterativeHeading >= -PI_VALUE
+		&& iterativeHeading <= PI_VALUE
+		&& "iterativeHeading out of range: abs(iterativeHeading) > 3.14(PI_VALUE) )")
 }

@@ -31,20 +31,17 @@
 #
 ############################################################################
 
-add_subdirectory(AttitudeControl)
-
 px4_add_module(
-	MODULE modules__mc_att_control
-	MAIN mc_att_control
-	COMPILE_FLAGS
-		${MAX_CUSTOM_OPT_LEVEL}
+	MODULE modules__sese_omni_control
+	MAIN sese_omni_control
+	STACK_MAIN 2000
 	SRCS
-		mc_att_control_main.cpp
-		mc_att_control.hpp
+		SeseOmni.cpp
+		SeseOmni.hpp
 	DEPENDS
-		AttitudeControl
-		mathlib
 		px4_work_queue
-	)
-# Adding unit tests: https://docs.px4.io/main/en/test_and_ci/unit_tests.html
-px4_add_unit_gtest(SRC UnitTest.cpp)
+		modules__control_allocator
+		pid
+	MODULE_CONFIG
+		module.yaml
+)
