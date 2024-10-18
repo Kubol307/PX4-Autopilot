@@ -32,6 +32,7 @@
  ****************************************************************************/
 
 #include "SeseOmni.hpp"
+#include <iostream>
 
 SeseOmni::SeseOmni() : ModuleParams(nullptr),
 					   ScheduledWorkItem(MODULE_NAME, px4::wq_configurations::rate_ctrl)
@@ -142,7 +143,7 @@ void SeseOmni::Run()
 				actuator_controls_status_s status;
 
 				thrust_setpoint.timestamp = now;
-				thrust_setpoint.xyz[0] = -manual_control_setpoint.throttle * thrust_scaling.get();
+				thrust_setpoint.xyz[0] = manual_control_setpoint.throttle * thrust_scaling.get();
 				thrust_setpoint.xyz[1] = manual_control_setpoint.yaw * thrust_scaling.get();
 				thrust_setpoint.xyz[2] = 0.0f;
 
@@ -176,7 +177,7 @@ void SeseOmni::Run()
 				vehicle_thrust_setpoint_s thrust_setpoint{};
 
 				thrust_setpoint.timestamp = now;
-				thrust_setpoint.xyz[0] = -manual_control_setpoint.throttle * thrust_scaling.get();
+				thrust_setpoint.xyz[0] = manual_control_setpoint.throttle * thrust_scaling.get();
 				thrust_setpoint.xyz[1] = manual_control_setpoint.yaw * thrust_scaling.get();
 				thrust_setpoint.xyz[2] = heading_sp.get();
 
@@ -224,8 +225,8 @@ void SeseOmni::Run()
 			float y_pos_ned = _local_pos.y;
 			float velocity_x_ned = _local_pos.vx;
 			float velocity_y_ned = _local_pos.vy;
-			float acceleration_x_ned = _local_pos.ax;
-			float acceleration_y_ned = _local_pos.ay;
+			// float acceleration_x_ned = _local_pos.ax;
+			// float acceleration_y_ned = _local_pos.ay;
 
 			vehicle_torque_setpoint_s torque_setpoint{};
 			vehicle_thrust_setpoint_s thrust_setpoint{};
@@ -243,15 +244,38 @@ void SeseOmni::Run()
 			// Transformation from NED to body frame
 			float sin_heading = sin(heading);
 			float cos_heading = cos(heading);
-			float velocity_x_body_frame = cos_heading * velocity_x_ned - sin_heading * velocity_y_ned;
-			float velocity_y_body_frame = sin_heading * velocity_x_ned + cos_heading * velocity_y_ned;
-			float acceleration_x_body_frame = cos_heading * acceleration_x_ned - sin_heading * acceleration_y_ned;
-			float acceleration_y_body_frame = sin_heading * acceleration_x_ned + cos_heading * acceleration_y_ned;
+			// float velocity_x_body_frame = cos_heading * velocity_x_ned - sin_heading * velocity_y_ned;
+			// float velocity_y_body_frame = sin_heading * velocity_x_ned + cos_heading * velocity_y_ned;
+			// float acceleration_x_body_frame = cos_heading * acceleration_x_ned - sin_heading * acceleration_y_ned;
+			// float acceleration_y_body_frame = sin_heading * acceleration_x_ned + cos_heading * acceleration_y_ned;
+
+			float thrust_setpoint_x_ned = 0.0;
+			float thrust_setpoint_y_ned = 0.0;
+			float thrust_setpoint_z_ned = 0.0;
 
 			thrust_setpoint.timestamp = now;
-			thrust_setpoint.xyz[0] = pid_calculate(&_x_velocity_pid, velocity_x_setpoint, velocity_x_body_frame, acceleration_x_body_frame, dt)*thrust_scaling.get();
-			thrust_setpoint.xyz[1] = pid_calculate(&_y_velocity_pid, velocity_y_setpoint, velocity_y_body_frame, acceleration_y_body_frame, dt)*thrust_scaling.get();
-			thrust_setpoint.xyz[2] = 0.0f;
+			thrust_setpoint_x_ned = pid_calculate(&_x_velocity_pid, velocity_x_setpoint, velocity_x_ned, 0.0f, dt)*thrust_scaling.get();
+			thrust_setpoint_y_ned = pid_calculate(&_y_velocity_pid, velocity_y_setpoint, velocity_y_ned, 0.0f, dt)*thrust_scaling.get();
+			thrust_setpoint_z_ned = 0.0f;
+
+			thrust_setpoint.xyz[0] = cos_heading * thrust_setpoint_x_ned - sin_heading * thrust_setpoint_y_ned;
+			thrust_setpoint.xyz[1] = sin_heading * thrust_setpoint_x_ned + cos_heading * thrust_setpoint_y_ned;
+			thrust_setpoint.xyz[2] = thrust_setpoint_z_ned;
+
+			for(int i = -2; i<=2; i++){
+				float error = 0.01;
+				float setpoint = 1.57;
+				if(heading <= setpoint*i+error && heading >= setpoint*i-error){
+					std::cout << "x_pos_setpoint: " << x_pos_setpoint << std::endl;
+					std::cout << "y_pos_setpoint: " << y_pos_setpoint << std::endl;
+					std::cout << "x_pos_ned: " << x_pos_ned << std::endl;
+					std::cout << "y_pos_ned: " << y_pos_ned << std::endl;
+					std::cout << "Heading: " << heading << std::endl;
+					std::cout << "thrust_setpoint.xyz[0]: " << thrust_setpoint.xyz[0] << std::endl;
+					std::cout << "thrust_setpoint.xyz[1]: " << thrust_setpoint.xyz[1] << std::endl;
+					std::cout << "thrust_setpoint.xyz[2]: " << thrust_setpoint.xyz[2] << std::endl;
+				}
+			}
 
 
 			status.timestamp = now;
