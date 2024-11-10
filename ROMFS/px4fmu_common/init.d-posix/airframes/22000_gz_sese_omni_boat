@@ -20,7 +20,9 @@
 . ${R}etc/init.d/rc.sese_defaults
 
 PX4_SIMULATOR=${PX4_SIMULATOR:=gz}
-PX4_GZ_WORLD=${PX4_GZ_WORLD:=ocean}
+PX4_GZ_WORLD=${PX4_GZ_WORLD:=default}
+PX4_SIM_MODEL=${PX4_SIM_MODEL:=sese_omni_boat}
+
 
 param set-default SIM_GZ_EN 1
 
