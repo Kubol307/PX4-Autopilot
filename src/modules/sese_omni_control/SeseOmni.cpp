@@ -189,7 +189,7 @@ void SeseOmni::Run()
 
 			float desired_heading = heading_sp.get();
 
-			float current_heading = _local_pos.heading;
+			float heading = _local_pos.heading;
 
 			vehicle_torque_setpoint_s torque_setpoint{};
 			actuator_controls_status_s status;
@@ -197,7 +197,7 @@ void SeseOmni::Run()
 			torque_setpoint.timestamp = now;
 			torque_setpoint.xyz[0] = 0.0f;
 			torque_setpoint.xyz[1] = 0.0f;
-			torque_setpoint.xyz[2] = pid_calculate(&_att_pid, desired_heading, current_heading, 0.0f, dt)*torque_scaling.get();
+			torque_setpoint.xyz[2] = pid_calculate(&_att_pid, desired_heading, heading, 0.0f, dt)*torque_scaling.get();
 
 			status.timestamp = torque_setpoint.timestamp;
 
@@ -211,7 +211,7 @@ void SeseOmni::Run()
 		}
 	}
 	else if(_position_control){
-		if (_local_pos_sub.update(&_local_pos)) {
+		// if (_local_pos_sub.update(&_local_pos)) {
 			const float dt = math::min((now - _time_stamp_last), 5000_ms) / 1e3f;
 			_time_stamp_last = now;
 
@@ -219,9 +219,13 @@ void SeseOmni::Run()
 			float x_pos_setpoint = x_pos_sp.get();
 			float y_pos_setpoint = y_pos_sp.get();
 
-			float heading = _local_pos.heading;
-			float x_pos_ned = _local_pos.x;
-			float y_pos_ned = _local_pos.y;
+			float x_pos_ned = current_x_pos.get();
+			float y_pos_ned = current_y_pos.get();
+			float heading = current_heading.get();
+			// float x_pos_ned = _local_pos.x;
+			// float y_pos_ned = _local_pos.y;
+			// float heading = _local_pos.heading;
+
 			float velocity_x_ned = _local_pos.vx;
 			float velocity_y_ned = _local_pos.vy;
 			float acceleration_x_ned = _local_pos.ax;
@@ -243,14 +247,17 @@ void SeseOmni::Run()
 			// Transformation from NED to body frame
 			float sin_heading = sin(heading);
 			float cos_heading = cos(heading);
-			float velocity_x_body_frame = cos_heading * velocity_x_ned - sin_heading * velocity_y_ned;
-			float velocity_y_body_frame = sin_heading * velocity_x_ned + cos_heading * velocity_y_ned;
-			float acceleration_x_body_frame = cos_heading * acceleration_x_ned - sin_heading * acceleration_y_ned;
-			float acceleration_y_body_frame = sin_heading * acceleration_x_ned + cos_heading * acceleration_y_ned;
+			float velocity_x_body_frame = cos_heading * velocity_x_ned + sin_heading * velocity_y_ned;
+			float velocity_y_body_frame = -sin_heading * velocity_x_ned + cos_heading * velocity_y_ned;
+			float acceleration_x_body_frame = cos_heading * acceleration_x_ned + sin_heading * acceleration_y_ned;
+			float acceleration_y_body_frame = -sin_heading * acceleration_x_ned + cos_heading * acceleration_y_ned;
+
+			float velocity_x_setpoint_body_frame = cos_heading * velocity_x_setpoint + sin_heading * velocity_y_setpoint;
+			float velocity_y_setpoint_body_frame = -sin_heading * velocity_x_setpoint + cos_heading * velocity_y_setpoint;
 
 			thrust_setpoint.timestamp = now;
-			thrust_setpoint.xyz[0] = pid_calculate(&_x_velocity_pid, velocity_x_setpoint, velocity_x_body_frame, acceleration_x_body_frame, dt)*thrust_scaling.get();
-			thrust_setpoint.xyz[1] = pid_calculate(&_y_velocity_pid, velocity_y_setpoint, velocity_y_body_frame, acceleration_y_body_frame, dt)*thrust_scaling.get();
+			thrust_setpoint.xyz[0] = pid_calculate(&_x_velocity_pid, velocity_x_setpoint_body_frame, velocity_x_body_frame, acceleration_x_body_frame, dt)*thrust_scaling.get();
+			thrust_setpoint.xyz[1] = pid_calculate(&_y_velocity_pid, velocity_y_setpoint_body_frame, velocity_y_body_frame, acceleration_y_body_frame, dt)*thrust_scaling.get();
 			thrust_setpoint.xyz[2] = 0.0f;
 
 
@@ -263,7 +270,7 @@ void SeseOmni::Run()
 			_vehicle_torque_setpoint_pub.publish(torque_setpoint);
 			_vehicle_thrust_setpoint_pub.publish(thrust_setpoint);
 			_actuator_controls_status_pub.publish(status);
-		}
+		// }
 	}
 	else if(_hold_mode){
 		if (_local_pos_setpoint_sub.update(&_local_pos_setpoint)) {
