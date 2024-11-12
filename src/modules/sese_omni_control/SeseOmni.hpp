@@ -135,7 +135,10 @@ private:
 		(ParamFloat<px4::params::X_POS_SP>) x_pos_sp,
 		(ParamFloat<px4::params::Y_POS_SP>) y_pos_sp,
 		(ParamFloat<px4::params::THRUST_SCALING>) thrust_scaling,
-		(ParamFloat<px4::params::TORQUE_SCALING>) torque_scaling
+		(ParamFloat<px4::params::TORQUE_SCALING>) torque_scaling,
+		(ParamFloat<px4::params::X_POS>) current_x_pos,
+		(ParamFloat<px4::params::Y_POS>) current_y_pos,
+		(ParamFloat<px4::params::CURRENT_HEADING>) current_heading
 
 	);
 };
