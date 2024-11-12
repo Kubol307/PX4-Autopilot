@@ -201,6 +201,40 @@ parameters:
         increment: 0.001
         decimal: 3
         default: 0.0
+
+      X_POS:
+        description:
+          short: Current X pos
+          long: Current X pos
+        type: float
+        unit: m
+        min: -10.0
+        max: 10
+        increment: 0.001
+        decimal: 3
+        default: 0.0
+      Y_POS:
+        description:
+          short: Current Y pos
+          long: Current Y pos
+        type: float
+        unit: m
+        min: -10.0
+        max: 10
+        increment: 0.001
+        decimal: 3
+        default: 0.0
+      CURRENT_HEADING:
+        description:
+          short: Current heading
+          long: Current heading
+        type: float
+        unit: rad
+        min: -3.14
+        max: 3.14
+        decimal: 2
+        default: 0.0
+
       THRUST_SCALING:
         description:
           short: Scaling factor for thrust
@@ -211,7 +245,7 @@ parameters:
         max: 10
         increment: 0.001
         decimal: 3
-        default: 0.0
+        default: 1.0
       TORQUE_SCALING:
         description:
           short: Scaling factor for torque
@@ -222,4 +256,4 @@ parameters:
         max: 10
         increment: 0.001
         decimal: 3
-        default: 0.0
+        default: 1.0
